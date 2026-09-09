@@ -69,14 +69,6 @@ The function uses 4096 MiB memory, a 180-second timeout, 1024 MiB ephemeral stor
 
 Requires Terraform >= 1.5.7, AWS provider >= 6.28 and < 7.0, and `terraform-aws-modules/lambda/aws ~> 8.0`. The example also uses the Random provider.
 
-## Deployment checks
-
-1. Confirm the image release passed its container smoke test and is available with the required ECR retrieval permissions in the target region.
-2. Review a full plan before applying. Coordinate the application deployment so clients have the endpoint and matching key when conversion authentication changes. Function and application updates are not atomic.
-3. Verify `GET /health` succeeds without a key. Both `POST /convert/html` and `POST /convert/html-with-attachments` must reject missing or incorrect keys with `401`.
-4. Send an authenticated HTML conversion request. Check for `200`, `application/pdf`, a non-empty PDF, and expected text, SVG rendering, and the requested PDF variant. Verify repeated warm requests remain healthy.
-5. Monitor CloudWatch Errors, Throttles, Duration, ConcurrentExecutions, and REPORT maximum memory used. Check a real application request before expanding rollout.
-
 ## Development
 
 Terraform 1.7 or later is required for the tests:
@@ -88,7 +80,7 @@ terraform validate
 terraform test
 ```
 
-Tests plan URL-only public permissions and reject unsafe key configurations without contacting AWS. Runtime verification is covered in [deployment checks](#deployment-checks).
+Tests plan URL-only public permissions and reject unsafe key configurations without contacting AWS.
 
 ## License
 
