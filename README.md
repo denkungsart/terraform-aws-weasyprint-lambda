@@ -4,7 +4,7 @@ Deploy an ARM64 WeasyPrint container on AWS Lambda with a streaming HTTPS Functi
 
 ## Usage
 
-Supply a Lambda-compatible image using [weasyprint-service](https://github.com/SchweizerischeBundesbahnen/weasyprint-service) 69.0.1 or later with `API_KEY` support and Lambda Web Adapter configured for response streaming. The image must exist in ECR in the AWS provider's region. The module neither builds images nor manages ECR repositories or their cross-account retrieval policies.
+Supply a Lambda-compatible image meeting the [image requirements](#image-requirements) below. The consuming stack supplies naming, image selection, and application configuration.
 
 ```hcl
 resource "random_password" "renderer_api_key" {
@@ -24,6 +24,24 @@ module "renderer" {
 ```
 
 Configure the client with `module.renderer.function_url` and the same secret. Send conversion requests with `X-API-Key: <secret>`, for example `POST /convert/html` with `Content-Type: text/html; charset=utf-8` and the HTML document as its body. AWS credentials and request signing are unnecessary.
+
+The bare Function URL (`/`) has no route and returns `404 {"detail":"Not Found"}`. Use `GET /health` for health checks and `POST /convert/html` for HTML conversion. For example:
+
+```http
+POST /convert/html?pdf_variant=pdf%2Fua-1&file_name=document.pdf
+Content-Type: text/html; charset=utf-8
+X-API-Key: <secret>
+
+<!doctype html><html lang="en"><head><title>Example</title></head><body><p>Hello</p></body></html>
+```
+
+## Image requirements
+
+Use an immutable ARM64 Lambda-compatible image based on [weasyprint-service](https://github.com/SchweizerischeBundesbahnen/weasyprint-service) 69.0.1 or later with `API_KEY` support, and Lambda Web Adapter configured for response streaming. Upstream 69.0.0 ignores `API_KEY` and is unsuitable for this module.
+
+The image and Lambda must be in the [same AWS region](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html), including when ECR belongs to another account. The module does not build images, publish releases, configure replication, or manage repository policies.
+
+For cross-account ECR, configure image retrieval permissions for the deploying account and the Lambda service in every destination region. [ECR replication](https://docs.aws.amazon.com/AmazonECR/latest/userguide/replication.html) does not copy repository permissions by default. Repository creation templates can set permissions on future replicas; existing repositories need their policies checked separately. An image can be present in the correct region and still fail Lambda creation with ECR access denied if that regional policy is missing.
 
 ## Authentication
 
@@ -51,6 +69,14 @@ The function uses 4096 MiB memory, a 180-second timeout, 1024 MiB ephemeral stor
 
 Requires Terraform >= 1.5.7, AWS provider >= 6.28 and < 7.0, and `terraform-aws-modules/lambda/aws ~> 8.0`. The example also uses the Random provider.
 
+## Deployment checks
+
+1. Confirm the image release passed its container smoke test and is available with the required ECR retrieval permissions in the target region.
+2. Review a full plan before applying. Coordinate the application deployment so clients have the endpoint and matching key when conversion authentication changes. Function and application updates are not atomic.
+3. Verify `GET /health` succeeds without a key. Both `POST /convert/html` and `POST /convert/html-with-attachments` must reject missing or incorrect keys with `401`.
+4. Send an authenticated HTML conversion request. Check for `200`, `application/pdf`, a non-empty PDF, and expected text, SVG rendering, and the requested PDF variant. Verify repeated warm requests remain healthy.
+5. Monitor CloudWatch Errors, Throttles, Duration, ConcurrentExecutions, and REPORT maximum memory used. Check a real application request before expanding rollout.
+
 ## Development
 
 Terraform 1.7 or later is required for the tests:
@@ -62,7 +88,7 @@ terraform validate
 terraform test
 ```
 
-Tests plan URL-only public permissions and reject unsafe key configurations without contacting AWS. Validate the chosen container separately: health succeeds without a key, both conversion routes reject missing/incorrect keys, and a correct key produces a valid PDF.
+Tests plan URL-only public permissions and reject unsafe key configurations without contacting AWS. Runtime verification is covered in [deployment checks](#deployment-checks).
 
 ## License
 
